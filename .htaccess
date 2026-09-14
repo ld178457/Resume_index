@@ -1,0 +1,30 @@
+# 静态站点优化（可选文件）
+# 说明：本机检测到服务器响应头是 Server: nginx。如果主机是纯 nginx，
+#       本文件会被忽略（无作用也无害）；如果前端是 Apache/LiteSpeed 则生效。
+#       压缩与缓存若面板里没有开关，就不必强求——本站已压到约 190KB。
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/webp "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/png  "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType text/css   "access plus 1 month"
+  ExpiresByType application/javascript "access plus 1 month"
+  ExpiresByType application/pdf "access plus 1 month"
+  # HTML 与语言包短缓存，避免改完看不到效果
+  ExpiresByType text/html  "access plus 10 minutes"
+  ExpiresByType application/json "access plus 10 minutes"
+</IfModule>
+
+<IfModule mod_mime.c>
+  AddType image/webp .webp
+</IfModule>
+
+<IfModule mod_dir.c>
+  DirectoryIndex index.html index.php
+</IfModule>

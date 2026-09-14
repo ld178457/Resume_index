@@ -1,0 +1,768 @@
+/*==================================================================
+  PREMIUM 视觉增强层
+  必须在 styles.css 之后加载；只做增强与少量精确覆盖，不改变既有布局。
+
+  关键约定：进场/悬浮一律使用 CSS `translate` 属性（而非 transform），
+  这样不会覆盖模板里已有的 transform（例如 .home__social 的 translateX(-6rem)）。
+==================================================================*/
+
+:root {
+  --ease-out-expo: cubic-bezier(.16, 1, .3, 1);
+  --ease-out-back: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/*==================== 1. 全局质感 ====================*/
+::selection {
+  background-color: var(--first-color);
+  color: #fff;
+}
+
+/* 滚动条（变量模板里已定义却没用上） */
+::-webkit-scrollbar {
+  width: .55rem;
+  background-color: var(--scroll-bar-color);
+  border-radius: .5rem;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb-color);
+  border-radius: .5rem;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--first-color);
+}
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb-color) var(--scroll-bar-color);
+}
+
+/* 顶部滚动进度条（元素由 animations.js 创建） */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--first-color), var(--first-color-alt), hsl(190, 85%, 58%));
+  z-index: calc(var(--z-fixed) + 1);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/*==================== 2. 头部毛玻璃 ====================*/
+.scroll-header {
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
+  background-color: hsla(var(--hue-color), 60%, 99%, .74);
+  box-shadow: 0 -1px 20px rgba(0, 0, 0, .10);
+  transition: background-color .35s ease, box-shadow .35s ease;
+}
+body.dark-theme .scroll-header {
+  background-color: hsla(var(--hue-color), 28%, 12%, .72);
+  box-shadow: 0 -1px 20px rgba(0, 0, 0, .45);
+}
+/* ≥768px 时头部在顶部，阴影方向跟着翻转 */
+@media screen and (min-width: 768px) {
+  .scroll-header { box-shadow: 0 1px 20px rgba(0, 0, 0, .08); }
+  body.dark-theme .scroll-header { box-shadow: 0 1px 20px rgba(0, 0, 0, .40); }
+}
+
+/* 移动端菜单：毛玻璃 + 更顺的缓动 + 遮罩 */
+@media screen and (max-width: 767px) {
+  .nav__menu {
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+    backdrop-filter: blur(18px) saturate(180%);
+    background-color: hsla(var(--hue-color), 60%, 99%, .94);
+    transition: bottom .42s var(--ease-out-expo);
+  }
+  body.dark-theme .nav__menu {
+    background-color: hsla(var(--hue-color), 28%, 12%, .94);
+  }
+}
+.nav__overlay {
+  display: none; /* 仅移动端需要（桌面端菜单常驻，没有 show-menu 状态） */
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, .45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .35s ease;
+  z-index: calc(var(--z-fixed) - 1);
+}
+.nav__overlay.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media screen and (max-width: 767px) {
+  .nav__overlay { display: block; }
+}
+
+/*==================== 3. 章节标题 ====================*/
+.section__title {
+  position: relative;
+  text-wrap: balance;
+}
+/* 进场后从中间展开的强调下划线 */
+.section__title::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -.6rem;
+  width: 0;
+  height: 3px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, var(--first-color), var(--first-color-alt));
+  transition: width .9s var(--ease-out-expo) .15s;
+}
+.section__title.is-visible::after {
+  width: 2.75rem;
+}
+/* 渐变文字：仅在支持 background-clip:text 时生效，避免文字变透明不可见 */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .section__title {
+    background-image: linear-gradient(100deg, var(--title-color) 25%, var(--first-color));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.section__subtitle {
+  letter-spacing: .04em;
+}
+
+/*==================== 4. HERO ====================*/
+.home {
+  position: relative;
+  background-image:
+    radial-gradient(34rem 20rem at 16% 10%, hsla(var(--hue-color), 69%, 61%, .16), transparent 62%),
+    radial-gradient(26rem 18rem at 86% 34%, hsla(190, 85%, 58%, .14), transparent 62%);
+  background-repeat: no-repeat;
+}
+
+/* 头像：缓慢 3D 摆动（偏航 + 俯仰），比 2D 上下浮动更有体积感 */
+@keyframes fx-float-3d {
+  0%   { transform: translateY(0)     rotateY(-15deg) rotateX(5deg); }
+  50%  { transform: translateY(-12px) rotateY(15deg)  rotateX(-5deg); }
+  100% { transform: translateY(0)     rotateY(-15deg) rotateX(5deg); }
+}
+.home__img {
+  perspective: 1000px;   /* 父级给景深，子级 rotateY 才有透视 */
+  position: relative;
+}
+.home__blob {
+  transform-style: preserve-3d;
+  animation: fx-float-3d 12s ease-in-out infinite;
+}
+.home__img:hover .home__blob {
+  animation-duration: 5s;   /* 悬浮加速，强化"可交互的 3D 物件"质感 */
+}
+/* 头像外侧的轨道弧线：缓慢环绕的科技感点缀 */
+.home__img::before {
+  content: '';
+  position: absolute;
+  inset: -3%;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-top-color: hsla(var(--hue-color), 69%, 61%, .55);
+  border-left-color: hsla(var(--hue-color), 69%, 61%, .22);
+  animation: fx-orbit 9s linear infinite;
+  pointer-events: none;
+}
+@keyframes fx-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fx-rise {
+  from { opacity: 0; translate: 0 24px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+/* 首屏分层浮现（用 translate，不影响 .home__social 的 translateX 定位） */
+.home__img,
+.home__social,
+.home__title,
+.home__subtitle,
+.home__description,
+.home__data .button,
+.home__scroll {
+  animation: fx-rise .9s var(--ease-out-expo) both;
+}
+.home__img          { animation-delay: .05s; }
+.home__social       { animation-delay: .20s; }
+.home__title        { animation-delay: .30s; }
+.home__subtitle     { animation-delay: .42s; }
+.home__description  { animation-delay: .54s; }
+.home__data .button { animation-delay: .66s; }
+.home__scroll       { animation-delay: .82s; }
+
+/* 打字机光标（animations.js 会加 .is-typing） */
+.home__subtitle { min-height: 1.6em; }
+.home__subtitle.is-typing::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 3px;
+  vertical-align: -.16em;
+  background-color: var(--first-color);
+  animation: fx-blink .9s steps(2, start) infinite;
+}
+@keyframes fx-blink {
+  to { visibility: hidden; }
+}
+
+/*==================== 5. 滚动进场（通用） ====================*/
+/* --reveal-y 由 JS 按滚动方向写入：向下滚动时元素从下方进，向上滚动时从上方进 */
+.reveal {
+  opacity: 0;
+  translate: 0 var(--reveal-y, 28px);
+  transition: opacity .85s var(--ease-out-expo), translate .85s var(--ease-out-expo);
+  will-change: opacity, translate;
+}
+.reveal.is-visible {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/*==================== 6. 技能条 ====================*/
+.skills__percentage {
+  transition: width 1.15s var(--ease-out-expo);
+}
+.skills__data:hover .skills__name {
+  color: var(--first-color);
+}
+.skills__name { transition: color .3s ease; }
+.skills__header { transition: translate .35s var(--ease-out-expo); }
+.skills__header:hover { translate: 0 -3px; }
+
+/*==================== 7. 作品卡（含 3D 倾斜） ====================*/
+.portfolio__content {
+  /* translate 负责抬升，transform 负责 3D 倾斜——两者是独立属性，可叠加且不冲突 */
+  transition: translate .45s var(--ease-out-expo),
+              transform .45s var(--ease-out-expo),
+              box-shadow .45s ease;
+  border-radius: .75rem;
+}
+.portfolio__content:hover {
+  translate: 0 -6px;
+  box-shadow: 0 26px 50px hsla(var(--hue-color), 69%, 40%, .18);
+}
+.portfolio__img {
+  transition: transform .6s var(--ease-out-expo), box-shadow .45s ease;
+  border-radius: .75rem;
+}
+.portfolio__content:hover .portfolio__img {
+  transform: scale(1.045);
+  box-shadow: 0 18px 36px hsla(var(--hue-color), 69%, 40%, .22);
+}
+.portfolio__button .button__icon {
+  transition: translate .35s var(--ease-out-expo);
+}
+.portfolio__button:hover .button__icon {
+  translate: 4px 0;
+}
+
+/*==================== 8. 按钮扫光 ====================*/
+.button {
+  position: relative;
+  overflow: hidden;
+  transition: background-color .3s ease, translate .35s var(--ease-out-expo),
+              box-shadow .35s ease;
+}
+.button:hover {
+  translate: 0 -2px;
+  box-shadow: 0 10px 24px hsla(var(--hue-color), 69%, 50%, .32);
+}
+.button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -130%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .45), transparent);
+  transition: left .7s ease;
+  pointer-events: none;
+}
+.button:hover::after {
+  left: 130%;
+}
+
+/*==================== 9. 其他微交互 ====================*/
+.home__social-icon {
+  transition: translate .35s var(--ease-out-expo), color .3s ease;
+}
+.home__social-icon:hover {
+  translate: 0 -4px;
+}
+
+.qualification__rounder {
+  transition: transform .35s var(--ease-out-back), background-color .3s ease;
+}
+.qualification__data:hover .qualification__rounder {
+  transform: scale(1.3);
+  background-color: var(--first-color);
+}
+
+.contact__information {
+  transition: translate .35s var(--ease-out-expo);
+}
+.contact__information:hover {
+  translate: 5px 0;
+}
+
+.footer__link:hover {
+  letter-spacing: .02em;
+}
+.footer__link {
+  transition: color .3s ease, letter-spacing .3s ease;
+}
+
+.about__img {
+  transition: transform .6s var(--ease-out-expo);
+}
+.about__img:hover {
+  transform: scale(1.03) rotate(-1deg);
+}
+
+/*==================== 10. 3D 倾斜（卡片跟随光标） ====================*/
+/**
+ * 倾斜量由 JS 写入 --tilt-x / --tilt-y（单位 deg）。
+ * 用 transform 而非 translate：rotateX/rotateY 只能用 transform 表达。
+ * 因此这里只作用于「没有用 transform 做定位」的元素 —— 
+ * .home__social(.styles.css 用 translateX(-6rem) 定位) 绝不能加。
+ */
+.tilt-3d {
+  transform-style: preserve-3d;
+  transform: perspective(var(--tilt-perspective, 900px))
+             rotateX(var(--tilt-x, 0deg))
+             rotateY(var(--tilt-y, 0deg));
+}
+.portfolio__content,
+.skills__content {
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform-style: preserve-3d;
+}
+/* 技能卡：玻璃卡面 + 随倾斜移动的高光 */
+.skills__content {
+  position: relative;
+  overflow: hidden;
+  padding: .5rem 1rem .25rem;   /* 玻璃卡面需要一点内边距，否则边框贴着文字 */
+  background-color: hsla(var(--hue-color), 40%, 60%, .05);
+  border: 1px solid hsla(var(--hue-color), 40%, 70%, .16);
+  box-shadow: 0 6px 20px hsla(var(--hue-color), 40%, 30%, .06);
+  border-radius: .75rem;
+  transition: transform .45s var(--ease-out-expo), box-shadow .45s ease,
+              background-color .3s ease;
+}
+.skills__content::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* 高光位置跟着倾斜走，制造"光掠过表面"的立体感 */
+  background: radial-gradient(20rem 12rem at var(--glare-x, 50%) var(--glare-y, 0%),
+              hsla(0, 0%, 100%, .45), transparent 60%);
+  opacity: 0;
+  transition: opacity .45s ease;
+}
+.skills__content:hover::after {
+  opacity: 1;
+}
+.skills__content:hover {
+  box-shadow: 0 22px 44px hsla(var(--hue-color), 40%, 30%, .13);
+}
+body.dark-theme .skills__content {
+  background-color: hsla(var(--hue-color), 30%, 60%, .06);
+  border-color: hsla(var(--hue-color), 30%, 70%, .14);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+}
+
+/*==================== 11. 技能条：半透明玻璃质感 ====================*/
+.skills__bar {
+  height: 8px;                    /* 略加高，玻璃层次才有空间展现 */
+  border-radius: .5rem;
+  position: relative;
+  overflow: hidden;
+  background-color: hsla(var(--hue-color), 40%, 60%, .12);
+  -webkit-backdrop-filter: blur(6px) saturate(150%);
+  backdrop-filter: blur(6px) saturate(150%);
+  border: 1px solid hsla(0, 0%, 100%, .45);
+  /* 内阴影是玻璃感的关键：上暗下亮，模拟凹槽 */
+  box-shadow:
+    inset 0 1px 3px hsla(var(--hue-color), 40%, 25%, .18),
+    inset 0 -1px 0 hsla(0, 0%, 100%, .65);
+}
+.skills__bar::after {            /* 顶部高光带 */
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, hsla(0, 0%, 100%, .75), transparent);
+  pointer-events: none;
+}
+.skills__percentage {
+  height: 100%;
+  border-radius: .5rem;
+  position: relative;
+  background-image: linear-gradient(90deg,
+    var(--first-color-alt), var(--first-color) 60%, hsl(190, 88%, 64%));
+  box-shadow: 0 0 12px hsla(var(--hue-color), 69%, 61%, .55),
+              inset 0 1px 0 hsla(0, 0%, 100%, .45);
+}
+body.dark-theme .skills__bar {
+  background-color: hsla(var(--hue-color), 30%, 70%, .10);
+  border-color: hsla(0, 0%, 100%, .14);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, .45),
+    inset 0 -1px 0 hsla(0, 0%, 100%, .10);
+}
+body.dark-theme .skills__bar::after {
+  background: linear-gradient(90deg, transparent, hsla(0, 0%, 100%, .28), transparent);
+}
+
+/*==================== 12. 多层视差背景 ====================*/
+.parallax {
+  position: fixed;
+  inset: -35% 0;                /* 上下各留 35% 余量，供图层位移 */
+  z-index: -1;                  /* 位于页面内容之下、画布背景之上 */
+  overflow: hidden;
+  pointer-events: none;
+}
+.parallax__layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 100vh;                /* 每层固定一屏高并居中，位移时才不会露边 */
+  top: 50%;
+  margin-top: -50vh;
+  will-change: transform;
+}
+/* 最远层：细点阵，速率最慢 */
+.parallax__layer--dots {
+  background-image: radial-gradient(hsla(var(--hue-color), 60%, 55%, .22) 1px, transparent 1px);
+  background-size: 30px 30px;
+  opacity: .55;
+}
+/* 中景：主色光斑 */
+.parallax__layer--glow-a {
+  background: radial-gradient(32rem 26rem at 18% 12%,
+              hsla(var(--hue-color), 69%, 61%, .22), transparent 60%);
+}
+/* 近景：冷色光斑，速率最快 */
+.parallax__layer--glow-b {
+  background: radial-gradient(26rem 22rem at 84% 38%,
+              hsla(190, 85%, 58%, .18), transparent 62%);
+}
+body.dark-theme .parallax__layer--dots { opacity: .3; }
+body.dark-theme .parallax__layer--glow-a { opacity: .75; }
+
+/*==================== 13. 切换过渡：带方向的滑入 ====================*/
+@keyframes fx-slide-from-right {
+  from { opacity: 0; translate: 28px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+@keyframes fx-slide-from-left {
+  from { opacity: 0; translate: -28px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+.qualification__content.is-from-next {
+  animation: fx-slide-from-right .45s var(--ease-out-expo) both;
+}
+.qualification__content.is-from-prev {
+  animation: fx-slide-from-left .45s var(--ease-out-expo) both;
+}
+/* 技能面板展开：内容轻微下滑进入 */
+@keyframes fx-drop-in {
+  from { opacity: 0; translate: 0 -10px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+.skills__open .skills__list {
+  animation: fx-drop-in .4s var(--ease-out-expo) both;
+}
+
+/*==================== 14. 社交图标与公众号二维码 ====================*/
+/* 图标列因二维码变宽，整体居中才不显得图标"贴左" */
+.home__social {
+  justify-items: center;
+}
+
+/* Gitee 红 #C71D23 在深色底上对比度 2.79（图形要求 ≥3），暗色下提亮一档。
+   其余品牌色（B站蓝 #20B0E3 / 公众号绿 #01CC7A / 小红书红 #FF2E4D）对比度均达标，保持不变。 */
+body.dark-theme .social-icon--gitee svg {
+  filter: brightness(1.35);
+}
+
+/* 悬浮二维码浮层（公众号 / 小红书共用） */
+.social-entry {
+  position: relative;
+}
+.social-pop {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  translate: -8px -50%;
+  /* 宽度必须显式声明：绝对定位元素在 20px 宽的图标容器里，shrink-to-fit 的可用宽度为 0
+     会塌成十几像素；此时 styles.css 的全局 `img { max-width: 100% }` 再把图压成一条竖线 */
+  width: 144px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .4rem;
+  padding: .75rem .75rem .55rem;
+  border-radius: .8rem;
+  background-color: var(--container-color);
+  border: 1px solid hsla(var(--hue-color), 40%, 70%, .3);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: var(--z-tooltip);
+  transition: opacity .3s ease, translate .4s var(--ease-out-expo), visibility .3s;
+}
+/* 鼠标停留或键盘聚焦时显示（:focus-within 让键盘用户也能看到） */
+.social-entry:hover .social-pop,
+.social-entry:focus-within .social-pop {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  translate: 0 -50%;
+}
+.social-pop img {
+  display: block;
+  width: 100%;
+  height: auto;          /* 关键是别写死高度——写死了宽度一被限制就变形成竖条 */
+  aspect-ratio: 1 / 1;   /* 正方形兜底，任何情况都不会被压扁 */
+  max-width: 100%;
+  border-radius: .45rem;
+  background-color: #fff; /* 二维码需要白底才扫得准 */
+}
+.social-pop span {
+  font-size: var(--smaller-font-size);
+  color: var(--title-color);
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+/* 侧栏常驻二维码卡片 */
+.wechat-qr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .3rem;
+  padding: .35rem .35rem .45rem;
+  border-radius: .65rem;
+  background-color: hsla(var(--hue-color), 40%, 60%, .07);
+  border: 1px solid hsla(var(--hue-color), 40%, 70%, .2);
+  transition: translate .35s var(--ease-out-expo), box-shadow .35s ease, border-color .3s ease;
+}
+.wechat-qr-card:hover {
+  translate: 0 -3px;
+  border-color: hsla(var(--hue-color), 69%, 61%, .5);
+  box-shadow: 0 14px 28px hsla(var(--hue-color), 69%, 40%, .18);
+}
+.wechat-qr-card img {
+  display: block;
+  width: 84px;
+  height: auto;
+  aspect-ratio: 1 / 1;   /* 同理：不写死高度，宽度受限时才不会变形 */
+  border-radius: .4rem;
+  background-color: #fff;
+}
+.wechat-qr-card span {
+  font-size: var(--smaller-font-size);
+  color: var(--text-color-light);
+  white-space: nowrap;
+}
+body.dark-theme .wechat-qr-card {
+  background-color: hsla(var(--hue-color), 30%, 60%, .08);
+  border-color: hsla(var(--hue-color), 30%, 70%, .18);
+}
+
+/* 窄屏不显示二维码：① 手机无法扫自己屏幕上的码 ② 侧栏列宽仅 14%，放不下 */
+@media screen and (max-width: 567px) {
+  .social-pop,
+  .wechat-qr-card {
+    display: none;
+  }
+}
+
+/* 品牌名较长：禁止换行，极窄屏收紧字号 */
+.nav__logo,
+.footer__title {
+  white-space: nowrap;
+}
+@media screen and (max-width: 420px) {
+  .nav__logo {
+    font-size: var(--small-font-size);
+  }
+}
+
+/* 品牌名左侧的皮卡丘图标 */
+.nav__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+.nav__logo-icon {
+  /* 用 class 覆盖 styles.css 里的全局 img{height:auto}；
+     只给高度、宽度按原比例自适应，不会变形。
+     1.8rem≈29px：按真实尺寸渲染比对过，26px 时脸部细节会糊成一团，29px 起能清楚认出是皮卡丘 */
+  height: 1.8rem;
+  width: auto;
+  flex: 0 0 auto;
+  transition: transform .4s var(--ease-out-back);
+}
+/* 悬浮时轻轻上跳 + 侧倾，呼应这个角色的活泼感 */
+.nav__logo:hover .nav__logo-icon {
+  transform: translateY(-2px) rotate(-7deg);
+}
+
+/* 邮箱改造成可点击复制，给明确的可点反馈 */
+[data-copy] {
+  cursor: pointer;
+}
+.contact__subtitle[data-copy] {
+  transition: color .3s ease;
+}
+.contact__subtitle[data-copy]:hover {
+  color: var(--first-color);
+}
+
+/* 复制提示条 */
+.copy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 6rem;
+  translate: -50% 12px;
+  padding: .7rem 1.15rem;
+  border-radius: .6rem;
+  background-color: var(--title-color);
+  color: var(--body-color);
+  font-size: var(--small-font-size);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10000;
+  transition: opacity .3s ease, translate .35s var(--ease-out-expo);
+}
+.copy-toast.is-show {
+  opacity: 1;
+  translate: -50% 0;
+}
+
+/*==================== 15. 关于区块：三段身份自动轮播 ====================*/
+.about-carousel {
+  margin-bottom: 3.5rem;   /* 给下方的分页点留位置 */
+}
+/* 箭头往外挪，避免压在卡片边框上 */
+.about-carousel .carousel__btn--prev { left: -1rem; }
+.about-carousel .carousel__btn--next { right: -1rem; }
+.about-carousel .carousel__dots { bottom: -2.5rem; }
+
+.about-slide {
+  display: grid;
+  grid-template-columns: 1fr;
+  /* 三张图比例不同，用 align-content 让内容在被拉伸到统一高度的卡片里垂直居中，
+     这样轮播切换时不会出现高度跳动 */
+  align-content: center;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border-radius: .9rem;
+  background-color: hsla(var(--hue-color), 40%, 60%, .05);
+  border: 1px solid hsla(var(--hue-color), 40%, 70%, .16);
+}
+body.dark-theme .about-slide {
+  background-color: hsla(var(--hue-color), 30%, 60%, .07);
+  border-color: hsla(var(--hue-color), 30%, 70%, .16);
+}
+.about-slide__img {
+  display: block;
+  width: 100%;           /* 只给宽度、高度自适应——避免写死高度被压扁的老问题 */
+  height: auto;
+  border-radius: .55rem;
+  border: 1px solid hsla(var(--hue-color), 40%, 70%, .2);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .12);
+}
+.about-slide__title {
+  font-size: var(--h3-font-size);
+  color: var(--title-color);
+  margin-bottom: .5rem;
+}
+.about-slide__text {
+  font-size: var(--small-font-size);
+  line-height: 1.8;
+  color: var(--text-color);
+}
+
+@media screen and (min-width: 768px) {
+  .about-slide {
+    grid-template-columns: 1.05fr 1fr;   /* 图略宽于文字 */
+    gap: 2rem;
+    padding: 1.5rem;
+  }
+  .about-carousel .carousel__btn--prev { left: -3rem; }
+  .about-carousel .carousel__btn--next { right: -3rem; }
+}
+
+/*==================== 15b. 技能条初始宽度 ====================*/
+/* styles.css 里每根技能条靠一个类给初始宽度；JS 未运行时（或未滚到视口）用这里的值兜底，
+   进入视口后 animations.js 会读取 .skills__number 的文字重新做增长动画 */
+.skills__cpp { width: 75%; }
+.skills__c { width: 80%; }
+.skills__python { width: 70%; }   /* styles.css 原为 50%，按新数值覆盖 */
+.skills__qt { width: 65%; }
+.skills__verilog { width: 55%; }
+
+/*==================== 16. 无障碍：尊重减弱动效 ====================*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .reveal {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/*==================== 17. 打印：直接输出一份干净简历 ====================*/
+@media print {
+  .header,
+  .scrollup,
+  .nav__overlay,
+  .scroll-progress,
+  .fx-fireworks,
+  .home__scroll,
+  .home__social {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+  }
+  .section {
+    padding: 1.2rem 0 !important;
+    page-break-inside: avoid;
+  }
+  .skills__close .skills__list {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .qualification__content {
+    display: block !important;
+  }
+  a { text-decoration: none; color: #000 !important; }
+}
