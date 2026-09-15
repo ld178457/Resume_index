@@ -713,7 +713,7 @@ body.dark-theme .about-slide {
   .about-carousel .carousel__btn--next { right: -3rem; }
 }
 
-/*==================== 15b. 技能条初始宽度 ====================*/
+/*==================== 16. 技能条初始宽度 ====================*/
 /* styles.css 里每根技能条靠一个类给初始宽度；JS 未运行时（或未滚到视口）用这里的值兜底，
    进入视口后 animations.js 会读取 .skills__number 的文字重新做增长动画 */
 .skills__cpp { width: 75%; }
@@ -722,7 +722,18 @@ body.dark-theme .about-slide {
 .skills__qt { width: 65%; }
 .skills__verilog { width: 55%; }
 
-/*==================== 16. 无障碍：尊重减弱动效 ====================*/
+/*==================== 17. 3D 水波纹背景 ====================*/
+/* 由 assets/js/water.js 用 WebGL 绘制；不支持 WebGL 时脚本不插入画布，页面不受影响 */
+.water-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2;            /* 在页面内容之下，也在视差层(-1)之下 */
+  pointer-events: none;   /* 绝不能挡住点击，否则烟花点不出来 */
+}
+
+/*==================== 18. 无障碍：尊重减弱动效 ====================*/
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -737,7 +748,7 @@ body.dark-theme .about-slide {
   }
 }
 
-/*==================== 17. 打印：直接输出一份干净简历 ====================*/
+/*==================== 19. 打印：直接输出一份干净简历 ====================*/
 @media print {
   .header,
   .scrollup,
