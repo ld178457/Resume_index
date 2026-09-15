@@ -13,12 +13,29 @@
     var track = root.querySelector('.carousel__track');
     if (!track) return;
 
-    var slides = track.querySelectorAll('.carousel__slide');
+    var realSlides = Array.prototype.slice.call(track.querySelectorAll('.carousel__slide'));
     var prevBtn = root.querySelector('.carousel__btn--prev');
     var nextBtn = root.querySelector('.carousel__btn--next');
     var dotsWrap = root.querySelector('.carousel__dots');
-    var total = slides.length;
+    var total = realSlides.length;
     if (!total) return;
+
+    /* ---------- 无缝循环：首尾各插一张克隆页 ----------
+       轨道实际内容：[末页克隆][1][2][3][首页克隆]
+       真实页的下标是 1..total。从最后一页继续"向右"会滑到首页克隆，
+       滑动结束后瞬间归位到首页（位置相同，视觉上完全连续）。
+       这样最后一页到第一页也是向前滚动，不会出现"突然左滑倒回去"。 */
+    var looping = total > 1;
+    if (looping) {
+      var firstClone = realSlides[0].cloneNode(true);
+      var lastClone = realSlides[total - 1].cloneNode(true);
+      [firstClone, lastClone].forEach(function (c) {
+        c.classList.add('carousel__slide--clone');
+        c.setAttribute('aria-hidden', 'true');
+      });
+      track.insertBefore(lastClone, realSlides[0]);
+      track.appendChild(firstClone);
+    }
 
     var dots = [];
 
@@ -30,12 +47,19 @@
 
     /* ---------- 工具 ---------- */
     function slideWidth() {
-      return slides[0].getBoundingClientRect().width || track.clientWidth;
+      return realSlides[0].getBoundingClientRect().width || track.clientWidth;
     }
 
-    function currentIndex() {
+    // 轨道内的绝对下标（含两张克隆页）：0 = 末页克隆，1..total = 真实页，total+1 = 首页克隆
+    function rawIndex() {
       var w = slideWidth();
-      return w ? Math.round(track.scrollLeft / w) : 0;
+      return w ? Math.round(track.scrollLeft / w) : 1;
+    }
+
+    // 对外/分页点使用的真实页下标 0..total-1
+    function currentIndex() {
+      if (!looping) return Math.max(0, rawIndex());
+      return ((rawIndex() - 1) % total + total) % total;
     }
 
     /* ---------- 分页点 ---------- */
@@ -75,9 +99,9 @@
         if (single) btn.setAttribute('hidden', '');
         else btn.removeAttribute('hidden');
       });
-      // 给读屏软件标注当前页
+      // 给读屏软件标注当前页（克隆页始终隐藏）
       for (var s = 0; s < total; s++) {
-        slides[s].setAttribute('aria-hidden', s === i ? 'false' : 'true');
+        realSlides[s].setAttribute('aria-hidden', s === i ? 'false' : 'true');
       }
     }
 
@@ -93,29 +117,55 @@
     }, { passive: true });
 
     /* ---------- 跳转 ---------- */
-    function goTo(index, instant) {
-      var n = total;
-      var target = ((index % n) + n) % n;     // 循环：越界回绕
-      var wrap = Math.abs(target - currentIndex()) > 1;
+    var normTimer = null;
+
+    // 瞬间落到某个绝对下标（归位用，不带动画，看不见）
+    function jumpRaw(raw) {
+      track.scrollTo({ left: raw * slideWidth(), behavior: 'auto' });
+      sync();
+    }
+
+    // 滑到克隆页后归位到等价的真实页：两者位置一模一样，所以视觉上无缝
+    function normalize() {
+      if (!looping) return;
+      var i = rawIndex();
+      if (i === total + 1) jumpRaw(1);        // 首页克隆 → 首页
+      else if (i === 0) jumpRaw(total);       // 末页克隆 → 末页
+    }
+
+    function goRaw(raw, instant) {
+      var i = looping ? raw : Math.min(Math.max(raw, 0), total - 1);
       track.scrollTo({
-        left: target * slideWidth(),
-        // 循环回绕时用瞬时跳转，避免长距离反向滑动
-        behavior: (instant || wrap || reduceMotion) ? 'auto' : 'smooth'
+        left: i * slideWidth(),
+        behavior: (instant || reduceMotion) ? 'auto' : 'smooth'
       });
       sync();
+      if (looping) {
+        clearTimeout(normTimer);
+        normTimer = setTimeout(normalize, (instant || reduceMotion) ? 0 : 620);
+      }
       // 手动操作后重新计时，避免"刚点完就自动跳走"（悬停/聚焦暂停期间不重启）
       if (autoOn && !autoPaused) startAuto();
+    }
+
+    // 对外仍用真实页下标 0..total-1
+    function goTo(real, instant) { goRaw(looping ? real + 1 : real, instant); }
+    function next() { goRaw(rawIndex() + 1); }   // 末页 → 首页克隆（继续向右）
+    function prev() { goRaw(rawIndex() - 1); }   // 首页 → 末页克隆（继续向左）
+
+    if ('onscrollend' in window) {
+      track.addEventListener('scrollend', normalize);
     }
 
     if (prevBtn) {
       prevBtn.type = 'button';
       if (!prevBtn.hasAttribute('aria-label')) prevBtn.setAttribute('aria-label', '上一张');
-      prevBtn.addEventListener('click', function () { goTo(currentIndex() - 1); });
+      prevBtn.addEventListener('click', prev);
     }
     if (nextBtn) {
       nextBtn.type = 'button';
       if (!nextBtn.hasAttribute('aria-label')) nextBtn.setAttribute('aria-label', '下一张');
-      nextBtn.addEventListener('click', function () { goTo(currentIndex() + 1); });
+      nextBtn.addEventListener('click', next);
     }
     if (dotsWrap) {
       dotsWrap.addEventListener('click', function (e) {
@@ -150,7 +200,7 @@
         // 不在视口里也不推进（下面的区块用户看不到）
         var rect = track.getBoundingClientRect();
         if (rect.bottom < 0 || rect.top > window.innerHeight) return;
-        goTo(currentIndex() + 1);
+        next();
       }, autoplayMs);
     }
 
@@ -167,6 +217,8 @@
     }
 
     buildDots();
+    // 起始位置停在第一个「真实页」（跳过前面的末页克隆）
+    jumpRaw(looping ? 1 : 0);
     sync();
   }
 

@@ -25,18 +25,22 @@
   var LIFE = 5.7;       // 单个涟漪寿命 s（SPEED × LIFE ≈ 331px 半径）
   var TAIL = 135;       // 波包长度 px —— 决定一圈涟漪里能看见几道水纹（荡漾感来源）
   var WLEN = 72;        // 波长 px —— 相邻两道水纹的间距（= 频率旋钮之一）
-  var IDLE_GAP = 2.0;   // 鼠标停留时每隔多久再发一圈
   var SOFT = 0.30;      // 波高软饱和：多颗涟漪叠加时会互相累加，不压一下会爆亮
-  /* 跟随鼠标的波纹是着色器里的「连续尾流」（见 FRAG 的 uWake 项），
+  /* 跟随指针的波纹早在 v1 就改成着色器里的连续源（FRAG 的 uSrcAmp/uSrcR 项），
      不再用离散涟漪沿轨迹补点 —— 离散补点有两个天然缺陷：
      ① 鼠标比波前快，补点之间必然出现可见空档（"不连续"）；
-     ② 涟漪池被快速移动灌满，新涟漪不断挤掉旧涟漪，画面会"跳"（"卡"）。
-     连续尾流的中心逐帧贴着指针，从原理上消除这两个问题。 */
-  var WAKE_R = 125;     // 尾流衰减尺度 px（exp(-pd/WAKE_R)；硬截止在 2.5 倍 ≈ 313px）
-  var WAKE_AMP = 0.5;   // 尾流振幅
-  var WAKE_FADE = 0.12; // 停止移动后，超过该秒数尾流开始消散
-  var STRENGTH_IDLE = 1.0;    // 鼠标停留时的离散涟漪强度
-  var STRENGTH_AMBIENT = 0.5; // 无指针环境（触屏）自动补的
+     ② 涟漪池被快速移动灌满，新涟漪不断挤掉旧涟漪，画面会"跳"（"卡"）；
+     ③ 定时 spawn 一圈新涟漪，视觉上就是"抖一下重新起波纹"（"抖"）。 */
+  var WAKE_R = 95;      // 移动时的扩散尺度 px（硬截止 2.5 倍 ≈ 238px）
+  var WAKE_AMP = 0.5;   // 移动时的振幅
+  var IDLE_R = 135;     // 静止时的扩散尺度 px（硬截止 2.5 倍 ≈ 338px，与涟漪半径一致）
+  var IDLE_AMP = 0.60;  // 静止时的振幅
+  /* 跟随指针的波纹是一个「常开的连续源」，不是定时 spawn 的离散涟漪：
+     离散涟漪每隔几秒新起一圈，视觉上就是"抖一下重新来过"（用户反馈的问题）。
+     连续源的相位只随时间推进，波纹永远在向外散开，没有起点、没有重启。
+     移动/静止只是切换半径与振幅（都在帧循环里平滑过渡）。 */
+  var STRENGTH_IDLE = 1.0;    // 触摸时点一下的强度（触屏没有常驻指针）
+  var STRENGTH_AMBIENT = 0.5; // 无指针环境（触屏/从未移动）自动补的
 
   var canvas = document.createElement('canvas');
   canvas.className = 'water-canvas';
@@ -74,14 +78,15 @@
     'uniform vec3  uColorB;',
     'uniform float uOpacity;',
     'uniform vec2  uPointer;',   // 指针当前位置（着色器坐标系）
-    'uniform float uWake;',      // 尾流强度包络 0..1（移动时升起，停止后消散）
+    'uniform float uSrcAmp;',    // 连续源的振幅（移动/静止不同，帧循环里平滑过渡）
+    'uniform float uSrcR;',      // 连续源的扩散尺度 px（硬截止 2.5 倍）
     'const float SPEED = ' + SPEED.toFixed(1) + ';',
     'const float LIFE  = ' + LIFE.toFixed(1) + ';',
     'const float TAIL  = ' + TAIL.toFixed(1) + ';',
     'const float WLEN  = ' + WLEN.toFixed(1) + ';',
     'const float SOFT  = ' + SOFT.toFixed(2) + ';',
-    'const float WAKE_R = ' + WAKE_R.toFixed(1) + ';',
-    'const float WAKE_AMP = ' + WAKE_AMP.toFixed(2) + ';',
+    // 注：连续源的半径/振幅走 uniform（uSrcR / uSrcAmp），不再是常量 ——
+    // 半径要在移动态与静止态之间平滑切换，常量做不到
     // 高度场：每个涟漪是一道随时间外扩的"波列"（多道同心水纹），
     // 而不是单独一圈 —— 多道水纹前后相随，才有水面荡漾的感觉
     'float heightAt(vec2 p) {',
@@ -106,14 +111,14 @@
     '      }',
     '    }',
     '  }',
-    '  // 指针尾流：以指针为中心的「连续」波列 —— 相位随时间外移，波前速度与离散涟漪一致',
-    '  //（都是 SPEED），但中心逐帧贴着指针，移动时不会出现空档，也不会留下离散拖尾',
-    '  if (uWake > 0.0) {',
+    // 指针处的「常开连续源」：以指针为中心的连续波列，相位只随时间推进，
+    // 波前以 SPEED 匀速向外散开 —— 没有起点、没有重启，所以不会出现周期性"抖一下"
+    '  if (uSrcAmp > 0.0) {',
     '    float pd = distance(p, uPointer);',
     '    float phase = pd * k - uTime * k * SPEED;',
-    // exp 包络拖尾太长（理论无限远），补一个硬截止，把扩散圆半径锁在 2.5×WAKE_R 内
-    '    float wenv = exp(-pd / WAKE_R) * (1.0 - smoothstep(WAKE_R * 2.0, WAKE_R * 2.5, pd));',
-    '    h += uWake * WAKE_AMP * sin(phase) * wenv;',
+    // exp 包络拖尾太长（理论无限远），补一个硬截止，把扩散圆半径锁在 2.5×R 内
+    '    float env = exp(-pd / uSrcR) * (1.0 - smoothstep(uSrcR * 2.0, uSrcR * 2.5, pd));',
+    '    h += uSrcAmp * sin(phase) * env;',
     '  }',
     // 软饱和：h/(1+|h|·SOFT)。波高低时几乎不改变波形，只有多颗叠加到很亮时
     // 才被压住 —— 快速划鼠标时不会出现"一片白斑"
@@ -183,7 +188,8 @@
     colorB: gl.getUniformLocation(prog, 'uColorB'),
     opacity: gl.getUniformLocation(prog, 'uOpacity'),
     pointer: gl.getUniformLocation(prog, 'uPointer'),
-    wake: gl.getUniformLocation(prog, 'uWake')
+    srcAmp: gl.getUniformLocation(prog, 'uSrcAmp'),
+    srcR: gl.getUniformLocation(prog, 'uSrcR')
   };
 
   gl.enable(gl.BLEND);
@@ -227,8 +233,8 @@
 
   var pointer = { x: 0, y: 0, has: false };
   var lastMoveT = -99;
-  var wake = 0;             // 尾流包络（帧循环里平滑升降）
-  var nextIdleAt = 0;
+  var srcAmp = 0;           // 连续源当前振幅（平滑过渡，避免突然出现/消失）
+  var srcR = IDLE_R;        // 连续源当前扩散尺度
   var nextAmbientAt = 1.5;
 
   window.addEventListener('pointermove', function (e) {
@@ -240,7 +246,7 @@
     pointer.has = true;
     pointer.x = e.clientX;
     pointer.y = e.clientY;
-    // 不在这里 spawn —— 跟随波纹由着色器的连续尾流负责（见 FRAG 的 uWake 项）
+    // 不在这里 spawn —— 跟随波纹由着色器的连续源负责（见 FRAG 的 uSrcAmp 项）
   }, { passive: true });
 
   window.addEventListener('pointerleave', function () { pointer.has = false; });
@@ -255,16 +261,15 @@
     if (document.hidden) return;               // 后台标签页不渲染
     var t = clock();
 
-    // 鼠标停留：以指针为中心持续外扩
-    if (pointer.has && t - lastMoveT > 0.28 && t > nextIdleAt) {
-      spawn(pointer.x, pointer.y, STRENGTH_IDLE);
-      nextIdleAt = t + IDLE_GAP;
-    }
+    // 连续源：指针在场时常开，移动/静止只是半径与振幅不同（都平滑过渡）。
+    // 不再定时 spawn 离散涟漪 —— 那样每隔几秒就会"抖一下"重新起波纹
+    var moving = pointer.has && (t - lastMoveT) < 0.25;
+    var ta = pointer.has ? (moving ? WAKE_AMP : IDLE_AMP) : 0;
+    var tr = moving ? WAKE_R : IDLE_R;
+    srcAmp += (ta - srcAmp) * (ta > srcAmp ? 0.06 : 0.04);   // 升起 0.06 / 落下 0.04，柔和
+    srcR += (tr - srcR) * 0.05;
+    if (srcAmp < 0.004) srcAmp = 0;
 
-    // 尾流包络：移动时平滑升到 1，停止后平滑消散（连续，无跳变）
-    var moving = pointer.has && (t - lastMoveT) < WAKE_FADE;
-    wake += ((moving ? 1 : 0) - wake) * (moving ? 0.35 : 0.10);
-    if (wake < 0.01) wake = 0;
     // 没有鼠标（触屏/从未移动）：偶尔来一圈环境涟漪，避免背景死板
     if (!pointer.has && t > nextAmbientAt) {
       spawn(Math.random() * window.innerWidth, Math.random() * window.innerHeight * 0.9, STRENGTH_AMBIENT);
@@ -281,7 +286,7 @@
       }
     }
 
-    if (!n && !wake) {                         // 没涟漪也没尾流时清空一次就歇着，省电
+    if (!n && !srcAmp) {                       // 没涟漪也没连续源时清空一次就歇着，省电
       if (drawnOnce) {
         gl.clear(gl.COLOR_BUFFER_BIT);
         drawnOnce = false;
@@ -295,7 +300,8 @@
     gl.uniform4fv(U.ripples, flat);
     gl.uniform1f(U.opacity, dark ? 0.86 : 0.88);  // 用同名数学在 Python 里渲染比对过：低于 0.7 基本看不见
     gl.uniform2f(U.pointer, pointer.x * scale, pointer.y * scale);
-    gl.uniform1f(U.wake, wake);
+    gl.uniform1f(U.srcAmp, srcAmp);
+    gl.uniform1f(U.srcR, srcR * scale);
     if (dark) {
       gl.uniform3f(U.colorA, 0.05, 0.12, 0.20);
       gl.uniform3f(U.colorB, 0.12, 0.25, 0.38);
