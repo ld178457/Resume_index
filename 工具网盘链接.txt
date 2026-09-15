@@ -1,0 +1,16 @@
+1. 通信驱动与工具
+（1） Modbus poll和Slave :  https://pan.baidu.com/s/1IPoErCov5U9fL_Ssg9tdgQ?pwd=r4yy 
+（2） Can驱动与PCAN调试助手： https://pan.baidu.com/s/1EZTib7E2XH-bJeCi5qm4yA?pwd=zww6 
+（3） RS232-485驱动与调试工具：https://pan.baidu.com/s/1MuBkFWPHvV-vGhoXHlhPgg?pwd=2wx6 
+（4）DSP28335学习资料和工具： https://pan.baidu.com/s/1KRvHIat0qGhZksOW0MSC6w?pwd=kzg3 
+
+2. 深度学习相关资料
+（1）手写数字体CIFAR/MINIST：https://pan.baidu.com/s/1qSeTdA26FFIplUF7TPOcHQ?pwd=78bm 
+（2）基于Pytorch的深度学习开源代码集： https://pan.baidu.com/s/1wU-wESthv41Jsjzj98RDtw?pwd=ii2x 
+（3）Opencv识别例程：https://pan.baidu.com/s/187HP0XuQQddJoE365JvmuQ?pwd=r8mw 
+
+3. 科研工具集合
+（1）Wireshark抓包软件： https://pan.baidu.com/s/1Q7uIIRcKpV9zIzOjMun2mA?pwd=uvsu 
+（2）OriginPro 2022软件： https://pan.baidu.com/s/1f1XHVOkz5MKKoLksGK-ydQ?pwd=p2rb 
+（3）AgGlyph绘图工具： https://pan.baidu.com/s/1h9KSt1t0oN0LwqUxfWQWZw?pwd=ss8g 
+（4）语音克隆IndexTTS2：https://pan.baidu.com/s/1HjGZiAH_zf7gq1gl2avlFw?pwd=zj9g 

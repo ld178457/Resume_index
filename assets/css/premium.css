@@ -699,7 +699,39 @@ body.dark-theme .wechat-qr-card {
   translate: -50% 0;
 }
 
-/*==================== 15. 关于区块：三段身份自动轮播 ====================*/
+/*==================== 15a. 工具集列表（原作品区改为网盘工具链接） ====================*/
+.tools-list {
+  margin-top: .4rem;
+}
+.tools-list li + li {
+  margin-top: .1rem;
+}
+.tools-list a {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .55rem .8rem;
+  border-radius: .55rem;
+  font-size: var(--normal-font-size);
+  color: var(--text-color);
+  transition: background-color .25s ease, color .25s ease, translate .25s var(--ease-out-expo);
+}
+.tools-list a:hover {
+  background-color: hsla(var(--hue-color), 60%, 55%, .10);
+  color: var(--first-color);
+  translate: 4px 0;
+}
+.tools-list__icon {
+  font-size: 1rem;
+  margin-left: auto;      /* 图标靠右，视觉上引导"点出去" */
+  opacity: .55;
+  transition: opacity .25s ease;
+}
+.tools-list a:hover .tools-list__icon {
+  opacity: 1;
+}
+
+/*==================== 15b. 关于区块：三段身份自动轮播 ====================*/
 .about-carousel {
   margin-bottom: 3.5rem;   /* 给下方的分页点留位置 */
 }

@@ -21,18 +21,21 @@
      ② 单点经历的振荡周期 ≈ WLEN / SPEED，现在是 72 / 58 ≈ 1.24s。
         觉得"抖/太快"就加大 WLEN 或减小 SPEED —— 这两个才是频率旋钮。 */
   var MAX_RIPPLES = 16;
-  var SPEED = 58;       // 波前扩散速度 px/s（原 92，调慢让水面更平静）
-  var LIFE = 5.7;       // 单个涟漪寿命 s（原 3.6；配合 SPEED 保持半径不变）
+  var SPEED = 58;       // 波前扩散速度 px/s
+  var LIFE = 5.7;       // 单个涟漪寿命 s（SPEED × LIFE ≈ 331px 半径）
   var TAIL = 135;       // 波包长度 px —— 决定一圈涟漪里能看见几道水纹（荡漾感来源）
-  var WLEN = 72;        // 波长 px —— 相邻两道水纹的间距（原 44，加大 = 水纹更舒展）
-  var MOVE_STEP = 95;   // 鼠标移动多少像素补一颗涟漪（原 52，加大 = 降低跟随密度）
-  var IDLE_GAP = 2.0;   // 鼠标停留时每隔多久再发一圈（原 1.25，加大 = 降低荡漾频率）
+  var WLEN = 72;        // 波长 px —— 相邻两道水纹的间距（= 频率旋钮之一）
+  var IDLE_GAP = 2.0;   // 鼠标停留时每隔多久再发一圈
   var SOFT = 0.30;      // 波高软饱和：多颗涟漪叠加时会互相累加，不压一下会爆亮
-  /* 移动 vs 停留，强度必须分开设：
-     移动时屏幕上同时挂着十几颗涟漪，用同样强度会"糊成一片"；
-     停留时只有 2~3 圈，太弱又看不见。 */
-  var STRENGTH_MOVE = 0.42;   // 跟随鼠标移动时（原 0.85）
-  var STRENGTH_IDLE = 1.0;    // 鼠标停留时（不变）
+  /* 跟随鼠标的波纹是着色器里的「连续尾流」（见 FRAG 的 uWake 项），
+     不再用离散涟漪沿轨迹补点 —— 离散补点有两个天然缺陷：
+     ① 鼠标比波前快，补点之间必然出现可见空档（"不连续"）；
+     ② 涟漪池被快速移动灌满，新涟漪不断挤掉旧涟漪，画面会"跳"（"卡"）。
+     连续尾流的中心逐帧贴着指针，从原理上消除这两个问题。 */
+  var WAKE_R = 260;     // 尾流可见半径 px（指数衰减包络）
+  var WAKE_AMP = 0.5;   // 尾流振幅
+  var WAKE_FADE = 0.12; // 停止移动后，超过该秒数尾流开始消散
+  var STRENGTH_IDLE = 1.0;    // 鼠标停留时的离散涟漪强度
   var STRENGTH_AMBIENT = 0.5; // 无指针环境（触屏）自动补的
 
   var canvas = document.createElement('canvas');
@@ -70,11 +73,15 @@
     'uniform vec3  uColorA;',
     'uniform vec3  uColorB;',
     'uniform float uOpacity;',
+    'uniform vec2  uPointer;',   // 指针当前位置（着色器坐标系）
+    'uniform float uWake;',      // 尾流强度包络 0..1（移动时升起，停止后消散）
     'const float SPEED = ' + SPEED.toFixed(1) + ';',
     'const float LIFE  = ' + LIFE.toFixed(1) + ';',
     'const float TAIL  = ' + TAIL.toFixed(1) + ';',
     'const float WLEN  = ' + WLEN.toFixed(1) + ';',
     'const float SOFT  = ' + SOFT.toFixed(2) + ';',
+    'const float WAKE_R = ' + WAKE_R.toFixed(1) + ';',
+    'const float WAKE_AMP = ' + WAKE_AMP.toFixed(2) + ';',
     // 高度场：每个涟漪是一道随时间外扩的"波列"（多道同心水纹），
     // 而不是单独一圈 —— 多道水纹前后相随，才有水面荡漾的感觉
     'float heightAt(vec2 p) {',
@@ -98,6 +105,13 @@
     '        h += wave * env * fade * fade * spread * r.w;',
     '      }',
     '    }',
+    '  }',
+    '  // 指针尾流：以指针为中心的「连续」波列 —— 相位随时间外移，波前速度与离散涟漪一致',
+    '  //（都是 SPEED），但中心逐帧贴着指针，移动时不会出现空档，也不会留下离散拖尾',
+    '  if (uWake > 0.0) {',
+    '    float pd = distance(p, uPointer);',
+    '    float phase = pd * k - uTime * k * SPEED;',
+    '    h += uWake * WAKE_AMP * sin(phase) * exp(-pd / WAKE_R);',
     '  }',
     // 软饱和：h/(1+|h|·SOFT)。波高低时几乎不改变波形，只有多颗叠加到很亮时
     // 才被压住 —— 快速划鼠标时不会出现"一片白斑"
@@ -165,7 +179,9 @@
     ripples: gl.getUniformLocation(prog, 'uRipples[0]'),
     colorA: gl.getUniformLocation(prog, 'uColorA'),
     colorB: gl.getUniformLocation(prog, 'uColorB'),
-    opacity: gl.getUniformLocation(prog, 'uOpacity')
+    opacity: gl.getUniformLocation(prog, 'uOpacity'),
+    pointer: gl.getUniformLocation(prog, 'uPointer'),
+    wake: gl.getUniformLocation(prog, 'uWake')
   };
 
   gl.enable(gl.BLEND);
@@ -208,28 +224,21 @@
   function clock() { return (performance.now() - t0) / 1000; }
 
   var pointer = { x: 0, y: 0, has: false };
-  var lastSpawnX = 0, lastSpawnY = 0;
   var lastMoveT = -99;
+  var wake = 0;             // 尾流包络（帧循环里平滑升降）
   var nextIdleAt = 0;
   var nextAmbientAt = 1.5;
 
   window.addEventListener('pointermove', function (e) {
+    lastMoveT = clock();
     if (e.pointerType === 'touch') {          // 触摸：只留一圈涟漪，不做常驻中心
       spawn(e.clientX, e.clientY, STRENGTH_IDLE);
-      lastMoveT = clock();
       return;
     }
-    var t = clock();
-    lastMoveT = t;
     pointer.has = true;
     pointer.x = e.clientX;
     pointer.y = e.clientY;
-    var dx = e.clientX - lastSpawnX, dy = e.clientY - lastSpawnY;
-    if (dx * dx + dy * dy > MOVE_STEP * MOVE_STEP) {   // 沿轨迹补点，形成跟随感
-      spawn(e.clientX, e.clientY, STRENGTH_MOVE);
-      lastSpawnX = e.clientX;
-      lastSpawnY = e.clientY;
-    }
+    // 不在这里 spawn —— 跟随波纹由着色器的连续尾流负责（见 FRAG 的 uWake 项）
   }, { passive: true });
 
   window.addEventListener('pointerleave', function () { pointer.has = false; });
@@ -249,6 +258,11 @@
       spawn(pointer.x, pointer.y, STRENGTH_IDLE);
       nextIdleAt = t + IDLE_GAP;
     }
+
+    // 尾流包络：移动时平滑升到 1，停止后平滑消散（连续，无跳变）
+    var moving = pointer.has && (t - lastMoveT) < WAKE_FADE;
+    wake += ((moving ? 1 : 0) - wake) * (moving ? 0.35 : 0.10);
+    if (wake < 0.01) wake = 0;
     // 没有鼠标（触屏/从未移动）：偶尔来一圈环境涟漪，避免背景死板
     if (!pointer.has && t > nextAmbientAt) {
       spawn(Math.random() * window.innerWidth, Math.random() * window.innerHeight * 0.9, STRENGTH_AMBIENT);
@@ -265,7 +279,7 @@
       }
     }
 
-    if (!n) {                                  // 没涟漪时清空一次就歇着，省电
+    if (!n && !wake) {                         // 没涟漪也没尾流时清空一次就歇着，省电
       if (drawnOnce) {
         gl.clear(gl.COLOR_BUFFER_BIT);
         drawnOnce = false;
@@ -278,6 +292,8 @@
     gl.uniform1i(U.count, n);
     gl.uniform4fv(U.ripples, flat);
     gl.uniform1f(U.opacity, dark ? 0.86 : 0.88);  // 用同名数学在 Python 里渲染比对过：低于 0.7 基本看不见
+    gl.uniform2f(U.pointer, pointer.x * scale, pointer.y * scale);
+    gl.uniform1f(U.wake, wake);
     if (dark) {
       gl.uniform3f(U.colorA, 0.05, 0.12, 0.20);
       gl.uniform3f(U.colorB, 0.12, 0.25, 0.38);
