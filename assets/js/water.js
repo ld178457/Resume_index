@@ -14,13 +14,26 @@
     : false;
   if (reduceMotion) return;
 
+  /* ---- 可调参数（观感全部集中在这里）----
+     两个关键约束，改之前先看一眼：
+     ① SPEED × LIFE = 涟漪最终半径，现在 58 × 5.7 ≈ 331px。
+        要"更慢"就同比例加大 LIFE，别单独调 SPEED，否则半径会缩水。
+     ② 单点经历的振荡周期 ≈ WLEN / SPEED，现在是 72 / 58 ≈ 1.24s。
+        觉得"抖/太快"就加大 WLEN 或减小 SPEED —— 这两个才是频率旋钮。 */
   var MAX_RIPPLES = 16;
-  var SPEED = 92;       // 波前扩散速度 px/s（调慢：水面更平静）
-  var LIFE = 3.6;       // 单个涟漪寿命 s（SPEED × LIFE ≈ 330px，半径不变但过程更舒缓）
-  var TAIL = 86;        // 波包长度 px —— 决定一圈涟漪里能看见几道水纹（荡漾感来源）
-  var WLEN = 44;        // 波长 px —— 相邻两道水纹的间距
-  var MOVE_STEP = 52;   // 鼠标移动多少像素补一颗涟漪（加大 = 降低跟随密度）
-  var IDLE_GAP = 1.25;  // 鼠标停留时每隔多久再发一圈（加大 = 降低荡漾频率）
+  var SPEED = 58;       // 波前扩散速度 px/s（原 92，调慢让水面更平静）
+  var LIFE = 5.7;       // 单个涟漪寿命 s（原 3.6；配合 SPEED 保持半径不变）
+  var TAIL = 135;       // 波包长度 px —— 决定一圈涟漪里能看见几道水纹（荡漾感来源）
+  var WLEN = 72;        // 波长 px —— 相邻两道水纹的间距（原 44，加大 = 水纹更舒展）
+  var MOVE_STEP = 95;   // 鼠标移动多少像素补一颗涟漪（原 52，加大 = 降低跟随密度）
+  var IDLE_GAP = 2.0;   // 鼠标停留时每隔多久再发一圈（原 1.25，加大 = 降低荡漾频率）
+  var SOFT = 0.30;      // 波高软饱和：多颗涟漪叠加时会互相累加，不压一下会爆亮
+  /* 移动 vs 停留，强度必须分开设：
+     移动时屏幕上同时挂着十几颗涟漪，用同样强度会"糊成一片"；
+     停留时只有 2~3 圈，太弱又看不见。 */
+  var STRENGTH_MOVE = 0.42;   // 跟随鼠标移动时（原 0.85）
+  var STRENGTH_IDLE = 1.0;    // 鼠标停留时（不变）
+  var STRENGTH_AMBIENT = 0.5; // 无指针环境（触屏）自动补的
 
   var canvas = document.createElement('canvas');
   canvas.className = 'water-canvas';
@@ -61,6 +74,7 @@
     'const float LIFE  = ' + LIFE.toFixed(1) + ';',
     'const float TAIL  = ' + TAIL.toFixed(1) + ';',
     'const float WLEN  = ' + WLEN.toFixed(1) + ';',
+    'const float SOFT  = ' + SOFT.toFixed(2) + ';',
     // 高度场：每个涟漪是一道随时间外扩的"波列"（多道同心水纹），
     // 而不是单独一圈 —— 多道水纹前后相随，才有水面荡漾的感觉
     'float heightAt(vec2 p) {',
@@ -85,7 +99,9 @@
     '      }',
     '    }',
     '  }',
-    '  return h;',
+    // 软饱和：h/(1+|h|·SOFT)。波高低时几乎不改变波形，只有多颗叠加到很亮时
+    // 才被压住 —— 快速划鼠标时不会出现"一片白斑"
+    '  return h / (1.0 + abs(h) * SOFT);',
     '}',
     'void main() {',
     // gl_FragCoord 原点在左下，涟漪坐标用左上原点，这里翻转 y
@@ -199,7 +215,7 @@
 
   window.addEventListener('pointermove', function (e) {
     if (e.pointerType === 'touch') {          // 触摸：只留一圈涟漪，不做常驻中心
-      spawn(e.clientX, e.clientY, 1);
+      spawn(e.clientX, e.clientY, STRENGTH_IDLE);
       lastMoveT = clock();
       return;
     }
@@ -210,7 +226,7 @@
     pointer.y = e.clientY;
     var dx = e.clientX - lastSpawnX, dy = e.clientY - lastSpawnY;
     if (dx * dx + dy * dy > MOVE_STEP * MOVE_STEP) {   // 沿轨迹补点，形成跟随感
-      spawn(e.clientX, e.clientY, 0.85);
+      spawn(e.clientX, e.clientY, STRENGTH_MOVE);
       lastSpawnX = e.clientX;
       lastSpawnY = e.clientY;
     }
@@ -230,13 +246,13 @@
 
     // 鼠标停留：以指针为中心持续外扩
     if (pointer.has && t - lastMoveT > 0.28 && t > nextIdleAt) {
-      spawn(pointer.x, pointer.y, 1);
+      spawn(pointer.x, pointer.y, STRENGTH_IDLE);
       nextIdleAt = t + IDLE_GAP;
     }
     // 没有鼠标（触屏/从未移动）：偶尔来一圈环境涟漪，避免背景死板
     if (!pointer.has && t > nextAmbientAt) {
-      spawn(Math.random() * window.innerWidth, Math.random() * window.innerHeight * 0.9, 0.5);
-      nextAmbientAt = t + 4.5 + Math.random() * 4.0;
+      spawn(Math.random() * window.innerWidth, Math.random() * window.innerHeight * 0.9, STRENGTH_AMBIENT);
+      nextAmbientAt = t + 6.0 + Math.random() * 5.0;
     }
 
     // 收集仍存活的涟漪
@@ -261,13 +277,13 @@
     gl.uniform1f(U.time, t);
     gl.uniform1i(U.count, n);
     gl.uniform4fv(U.ripples, flat);
-    gl.uniform1f(U.opacity, dark ? 0.9 : 0.92);   // 用同名数学在 Python 里渲染比对过：低于 0.8 基本看不见
+    gl.uniform1f(U.opacity, dark ? 0.86 : 0.88);  // 用同名数学在 Python 里渲染比对过：低于 0.7 基本看不见
     if (dark) {
       gl.uniform3f(U.colorA, 0.05, 0.12, 0.20);
       gl.uniform3f(U.colorB, 0.12, 0.25, 0.38);
     } else {
-      gl.uniform3f(U.colorA, 0.25, 0.55, 0.68);
-      gl.uniform3f(U.colorB, 0.60, 0.85, 0.94);
+      gl.uniform3f(U.colorA, 0.16, 0.46, 0.62);
+      gl.uniform3f(U.colorB, 0.72, 0.92, 0.97);
     }
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
