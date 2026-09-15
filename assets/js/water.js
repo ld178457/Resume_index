@@ -32,7 +32,7 @@
      ① 鼠标比波前快，补点之间必然出现可见空档（"不连续"）；
      ② 涟漪池被快速移动灌满，新涟漪不断挤掉旧涟漪，画面会"跳"（"卡"）。
      连续尾流的中心逐帧贴着指针，从原理上消除这两个问题。 */
-  var WAKE_R = 260;     // 尾流可见半径 px（指数衰减包络）
+  var WAKE_R = 125;     // 尾流衰减尺度 px（exp(-pd/WAKE_R)；硬截止在 2.5 倍 ≈ 313px）
   var WAKE_AMP = 0.5;   // 尾流振幅
   var WAKE_FADE = 0.12; // 停止移动后，超过该秒数尾流开始消散
   var STRENGTH_IDLE = 1.0;    // 鼠标停留时的离散涟漪强度
@@ -111,7 +111,9 @@
     '  if (uWake > 0.0) {',
     '    float pd = distance(p, uPointer);',
     '    float phase = pd * k - uTime * k * SPEED;',
-    '    h += uWake * WAKE_AMP * sin(phase) * exp(-pd / WAKE_R);',
+    // exp 包络拖尾太长（理论无限远），补一个硬截止，把扩散圆半径锁在 2.5×WAKE_R 内
+    '    float wenv = exp(-pd / WAKE_R) * (1.0 - smoothstep(WAKE_R * 2.0, WAKE_R * 2.5, pd));',
+    '    h += uWake * WAKE_AMP * sin(phase) * wenv;',
     '  }',
     // 软饱和：h/(1+|h|·SOFT)。波高低时几乎不改变波形，只有多颗叠加到很亮时
     // 才被压住 —— 快速划鼠标时不会出现"一片白斑"

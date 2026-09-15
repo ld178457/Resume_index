@@ -699,36 +699,99 @@ body.dark-theme .wechat-qr-card {
   translate: -50% 0;
 }
 
-/*==================== 15a. 工具集列表（原作品区改为网盘工具链接） ====================*/
-.tools-list {
-  margin-top: .4rem;
+/*==================== 15a. 工具集（原作品区改为网盘工具链接） ====================*/
+/* 轮播里的每一张卡：给内容一个"托盘"，避免文字贴在 slide 边缘 */
+.portfolio__content {
+  padding: 1.75rem 1.5rem;
 }
-.tools-list li + li {
-  margin-top: .1rem;
+
+/* 分类标题：左侧一道品牌色竖条，标题与副标题拉开层次 */
+.portfolio__title {
+  position: relative;
+  padding-left: .85rem;
+  font-size: var(--h3-font-size);
+  letter-spacing: .01em;
+}
+.portfolio__title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: .12em;
+  bottom: .12em;
+  width: 3px;
+  border-radius: 2px;
+  background-color: var(--first-color);
+  opacity: .85;
+}
+.portfolio__description {
+  margin-top: .15rem;
+  padding-left: .85rem;
+  font-size: var(--small-font-size);
+  letter-spacing: .02em;
+  color: var(--text-color-light);
+}
+
+/* 工具列表：CSS 计数器出序号，不污染 HTML */
+.tools-list {
+  counter-reset: tool;
+  margin-top: 1.15rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .6rem;
+}
+.tools-list li {
+  counter-increment: tool;
 }
 .tools-list a {
   display: flex;
   align-items: center;
-  gap: .5rem;
-  padding: .55rem .8rem;
-  border-radius: .55rem;
+  gap: .7rem;
+  padding: .7rem .9rem;
+  border-radius: .65rem;
+  border: 1px solid hsla(var(--hue-color), 40%, 70%, .18);
+  background-color: hsla(var(--hue-color), 40%, 60%, .045);
   font-size: var(--normal-font-size);
+  font-weight: 500;
+  letter-spacing: .015em;
   color: var(--text-color);
-  transition: background-color .25s ease, color .25s ease, translate .25s var(--ease-out-expo);
+  transition: translate .3s var(--ease-out-expo),
+              border-color .3s ease,
+              background-color .3s ease,
+              box-shadow .3s ease;
 }
-.tools-list a:hover {
-  background-color: hsla(var(--hue-color), 60%, 55%, .10);
+.tools-list a::before {
+  content: counter(tool, decimal-leading-zero);   /* 01 / 02 / 03 … */
+  flex: 0 0 auto;
+  font-size: var(--smaller-font-size);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--first-color);
-  translate: 4px 0;
+  opacity: .75;
+  transition: opacity .3s ease;
 }
 .tools-list__icon {
+  margin-left: auto;
   font-size: 1rem;
-  margin-left: auto;      /* 图标靠右，视觉上引导"点出去" */
-  opacity: .55;
-  transition: opacity .25s ease;
+  opacity: .45;
+  transition: opacity .3s ease, translate .3s var(--ease-out-expo);
 }
-.tools-list a:hover .tools-list__icon {
-  opacity: 1;
+.tools-list a:hover {
+  border-color: hsla(var(--hue-color), 60%, 55%, .45);
+  background-color: hsla(var(--hue-color), 60%, 55%, .10);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .10);
+  translate: 0 -2px;
+}
+.tools-list a:hover::before { opacity: 1; }
+.tools-list a:hover .tools-list__icon { opacity: 1; translate: 2px -2px; }
+body.dark-theme .tools-list a {
+  background-color: hsla(var(--hue-color), 30%, 60%, .07);
+  border-color: hsla(var(--hue-color), 30%, 70%, .18);
+}
+
+@media screen and (min-width: 768px) {
+  .portfolio__content { padding: 2rem; }
+  /* 双列：4 个工具正好 2×2，卡片更饱满；留白比单列更透气 */
+  .tools-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
 }
 
 /*==================== 15b. 关于区块：三段身份自动轮播 ====================*/
