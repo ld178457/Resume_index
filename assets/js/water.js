@@ -15,10 +15,12 @@
   if (reduceMotion) return;
 
   var MAX_RIPPLES = 16;
-  var SPEED = 150;      // 波前扩散速度 px/s
-  var LIFE = 2.2;       // 单个涟漪寿命 s（SPEED × LIFE ≈ 330px，即"合适半径"）
-  var MOVE_STEP = 34;   // 鼠标移动多少像素补一颗涟漪
-  var IDLE_GAP = 0.62;  // 鼠标停留时每隔多久再发一圈
+  var SPEED = 92;       // 波前扩散速度 px/s（调慢：水面更平静）
+  var LIFE = 3.6;       // 单个涟漪寿命 s（SPEED × LIFE ≈ 330px，半径不变但过程更舒缓）
+  var TAIL = 86;        // 波包长度 px —— 决定一圈涟漪里能看见几道水纹（荡漾感来源）
+  var WLEN = 44;        // 波长 px —— 相邻两道水纹的间距
+  var MOVE_STEP = 52;   // 鼠标移动多少像素补一颗涟漪（加大 = 降低跟随密度）
+  var IDLE_GAP = 1.25;  // 鼠标停留时每隔多久再发一圈（加大 = 降低荡漾频率）
 
   var canvas = document.createElement('canvas');
   canvas.className = 'water-canvas';
@@ -57,10 +59,13 @@
     'uniform float uOpacity;',
     'const float SPEED = ' + SPEED.toFixed(1) + ';',
     'const float LIFE  = ' + LIFE.toFixed(1) + ';',
-    'const float BAND  = 26.0;',
-    // 高度场：每个涟漪是一个随时间外扩的高斯波环
+    'const float TAIL  = ' + TAIL.toFixed(1) + ';',
+    'const float WLEN  = ' + WLEN.toFixed(1) + ';',
+    // 高度场：每个涟漪是一道随时间外扩的"波列"（多道同心水纹），
+    // 而不是单独一圈 —— 多道水纹前后相随，才有水面荡漾的感觉
     'float heightAt(vec2 p) {',
     '  float h = 0.0;',
+    '  float k = 6.28318 / WLEN;',
     '  for (int i = 0; i < MAX_RIPPLES; i++) {',
     '    if (i < uCount) {',
     '      vec4 r = uRipples[i];',
@@ -68,11 +73,15 @@
     '      if (age > 0.0 && age < LIFE) {',
     '        float d = distance(p, r.xy);',
     '        float front = age * SPEED;',
-    '        float x = (d - front) / BAND;',
-    '        float ring = exp(-x * x);',
+    '        float dist = d - front;',
+    // 波包中心略偏波前内侧：真实水波的纹路是拖在扩散前沿后面的
+    '        float t = (dist + TAIL * 0.45) / TAIL;',
+    '        float env = exp(-t * t);',
+    // 主波 + 一点点二次谐波，避免波形过于机械
+    '        float wave = sin(dist * k) * 0.85 + sin(dist * k * 1.7 + 1.1) * 0.15;',
     '        float fade = 1.0 - age / LIFE;',
-    '        float spread = 1.0 / (1.0 + front * 0.0022);',
-    '        h += sin(x * 3.14159) * ring * fade * spread * r.w;',
+    '        float spread = 1.0 / (1.0 + front * 0.0028);',
+    '        h += wave * env * fade * fade * spread * r.w;',
     '      }',
     '    }',
     '  }',
@@ -95,7 +104,7 @@
     '  vec3 base = mix(uColorA, uColorB, clamp(uv.y + h * 0.03, 0.0, 1.0));',
     '  vec3 col = base + (diff - 0.5) * 0.22 + vec3(1.0) * spec * 0.55;',
     // 透明度只跟波高与高光挂钩：无涟漪处完全透明，不遮挡页面
-    '  float a = uOpacity * (abs(h) * 0.9 + spec * 0.6);',
+    '  float a = uOpacity * (abs(h) * 0.8 + spec * 0.55);',
     '  gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));',
     '}'
   ].join('\n');
@@ -227,7 +236,7 @@
     // 没有鼠标（触屏/从未移动）：偶尔来一圈环境涟漪，避免背景死板
     if (!pointer.has && t > nextAmbientAt) {
       spawn(Math.random() * window.innerWidth, Math.random() * window.innerHeight * 0.9, 0.5);
-      nextAmbientAt = t + 2.4 + Math.random() * 2.6;
+      nextAmbientAt = t + 4.5 + Math.random() * 4.0;
     }
 
     // 收集仍存活的涟漪
@@ -252,13 +261,13 @@
     gl.uniform1f(U.time, t);
     gl.uniform1i(U.count, n);
     gl.uniform4fv(U.ripples, flat);
-    gl.uniform1f(U.opacity, dark ? 0.62 : 0.5);
+    gl.uniform1f(U.opacity, dark ? 0.9 : 0.92);   // 用同名数学在 Python 里渲染比对过：低于 0.8 基本看不见
     if (dark) {
-      gl.uniform3f(U.colorA, 0.10, 0.09, 0.26);
-      gl.uniform3f(U.colorB, 0.20, 0.19, 0.46);
+      gl.uniform3f(U.colorA, 0.05, 0.12, 0.20);
+      gl.uniform3f(U.colorB, 0.12, 0.25, 0.38);
     } else {
-      gl.uniform3f(U.colorA, 0.42, 0.36, 0.86);
-      gl.uniform3f(U.colorB, 0.78, 0.85, 0.99);
+      gl.uniform3f(U.colorA, 0.25, 0.55, 0.68);
+      gl.uniform3f(U.colorB, 0.60, 0.85, 0.94);
     }
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
